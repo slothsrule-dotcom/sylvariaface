@@ -100,12 +100,7 @@ await new Promise(resolve => {
   };
 });
 
-        await new Promise(resolve => {
-          video.onloadedmetadata = () => {
-            video.play();
-            resolve();
-          };
-        });
+
       } catch (err) {
         alert('Camera access denied or failed.');
         console.error(err);
