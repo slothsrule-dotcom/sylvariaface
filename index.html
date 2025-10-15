@@ -90,17 +90,15 @@
         faceapi.nets.ageGenderNet.loadFromUri('./')
       ]);
 
-console.log('Models loaded:', {
-  tiny: faceapi.nets.tinyFaceDetector.params,
-  landmarks: faceapi.nets.faceLandmark68Net.params,
-  recognition: faceapi.nets.faceRecognitionNet.params,
-  ageGender: faceapi.nets.ageGenderNet.params
-});
-
-
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         video.srcObject = stream;
+        await new Promise(resolve => {
+          video.onloadedmetadata = () => {
+            video.play();
+            resolve();
+          };
+        });
       } catch (err) {
         alert('Camera access denied or failed.');
         console.error(err);
@@ -182,12 +180,12 @@ console.log('Models loaded:', {
       scanBtn.onclick = async () => {
         const detection = await faceapi
           .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-                  .withFaceLandmarks()
-        .withFaceDescriptor();
+          .withFaceLandmarks()
+          .withFaceDescriptor();
 
         if (!detection) return alert('No face detected.');
 
-        const query = detection.descriptor;
+                const query = detection.descriptor;
         const labeled = users.map(u =>
           new faceapi.LabeledFaceDescriptors(u.name, [new Float32Array(u.descriptor)])
         );
