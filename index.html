@@ -90,6 +90,14 @@
         faceapi.nets.ageGenderNet.loadFromUri('./')
       ]);
 
+console.log('Models loaded:', {
+  tiny: faceapi.nets.tinyFaceDetector.params,
+  landmarks: faceapi.nets.faceLandmark68Net.params,
+  recognition: faceapi.nets.faceRecognitionNet.params,
+  ageGender: faceapi.nets.ageGenderNet.params
+});
+
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         video.srcObject = stream;
