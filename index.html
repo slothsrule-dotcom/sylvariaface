@@ -28,7 +28,7 @@
 </head>
 <body>
   <header>Sylvaria Identity Portal</header>
-  <div id="status">Loading models...</div>
+  <div id="status">Initializing…</div>
 
   <nav>
     <button class="tab active" data-tab="capture">📸 Capture</button>
@@ -76,9 +76,9 @@
     </div>
   </div>
 
-  <!-- Libraries loaded here (end of body guarantees DOM exists first) -->
+  <!-- Load tfjs and face-api from CDN (tf first) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
-  <script src="face-api.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
   <script>
   (async function initSylv() {
@@ -102,12 +102,12 @@
     let currentDescriptor = null;
 
     function setStatus(s) { statusEl.textContent = s; console.log('[status]', s); }
-
-    // disable interactive buttons until ready
-    function setInteractive(enabled) {
-      [captureBtn, scanBtn, exportBtn, importBtn].forEach(b => b.disabled = !enabled);
-    }
+    function setInteractive(enabled) { [captureBtn, scanBtn, exportBtn, importBtn].forEach(b => b.disabled = !enabled); }
     setInteractive(false);
+
+    // sanity logs for tf and face-api
+    console.log('tf', typeof tf, 'tf.version_core=', tf && tf.version_core);
+    console.log('faceapi', typeof faceapi, !!faceapi && Object.keys(faceapi.nets || {}).length);
 
     try {
       setStatus('Loading models...');
@@ -135,12 +135,10 @@
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
       await new Promise(resolve => {
-        // onloadedmetadata may already have fired in some browsers — check readyState
         if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
           video.play().catch(()=>{}); resolve(); return;
         }
         video.onloadedmetadata = () => { video.play().catch(()=>{}); resolve(); };
-        // fallback timeout
         setTimeout(() => resolve(), 3000);
       });
       console.log('Camera ready', video.readyState, video.videoWidth, video.videoHeight);
@@ -171,7 +169,6 @@
       preview.src = user.image || '';
       popup.style.display = 'block';
       overlay.style.display = 'block';
-      // save edits
       saveBtn.onclick = () => {
         user.name = nameInput.value;
         user.dob = dobInput.value;
@@ -183,13 +180,11 @@
       };
     }
 
-console.log('fromPixels input:', video, 'instanceof HTMLVideoElement=', video instanceof HTMLVideoElement, 'readyState=', video.readyState, 'w/h=', video.videoWidth, video.videoHeight);
-
-
     // Capture flow
     captureBtn.onclick = async () => {
       setStatus('Detecting face for capture...');
       try {
+        console.log('fromPixels input:', video, 'instanceof HTMLVideoElement=', video instanceof HTMLVideoElement, 'readyState=', video.readyState, 'w/h=', video.videoWidth, video.videoHeight);
         const detection = await faceapi
           .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
           .withFaceLandmarks()
@@ -224,6 +219,7 @@ console.log('fromPixels input:', video, 'instanceof HTMLVideoElement=', video in
     scanBtn.onclick = async () => {
       setStatus('Detecting face for scan...');
       try {
+        console.log('fromPixels input (scan):', video, 'instanceof HTMLVideoElement=', video instanceof HTMLVideoElement, 'readyState=', video.readyState, 'w/h=', video.videoWidth, video.videoHeight);
         const detection = await faceapi
           .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
           .withFaceLandmarks()
@@ -304,7 +300,6 @@ console.log('fromPixels input:', video, 'instanceof HTMLVideoElement=', video in
       setStatus('User saved.');
     };
 
-    // close popup when overlay clicked
     overlay.onclick = () => { popup.style.display = 'none'; overlay.style.display = 'none'; };
 
     renderUsers();
