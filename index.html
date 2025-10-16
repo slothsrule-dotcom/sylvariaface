@@ -4,29 +4,32 @@
   <meta charset="UTF-8" />
   <title>Sylvaria Identity Portal</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
-  <script src="face-api.min.js"></script>
   <style>
     body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #f4f7fa; color: #333; }
-    header { background: #2c3e50; color: white; padding: 1rem; text-align: center; font-size: 1.5rem; }
+    header { background: #2c3e50; color: white; padding: 1rem; text-align: center; font-size: 1.25rem; }
     nav { display: flex; justify-content: center; background: #ecf0f1; padding: 0.5rem; }
     nav button { margin: 0 0.5rem; padding: 0.5rem 1rem; border: none; background: #bdc3c7; border-radius: 6px; cursor: pointer; }
     nav button.active { background: #3498db; color: white; }
-    section { display: none; padding: 2rem; }
+    section { display: none; padding: 1.5rem; }
     section.active { display: block; }
-    video { width: 100%; max-width: 480px; border-radius: 12px; background: black; }
+    video { width: 100%; max-width: 480px; border-radius: 12px; background: black; display:block; margin: 0 auto; }
+    .controls { text-align:center; margin-top:1rem; }
     button.action { margin-top: 1rem; padding: 0.75rem 1.25rem; font-size: 1rem; border: none; border-radius: 8px; background: #3498db; color: white; cursor: pointer; }
-    button.action:hover { background: #2980b9; }
-    #popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); display: none; z-index: 10; width: 300px; }
-    #popup img { width: 100%; border-radius: 8px; margin-bottom: 1rem; }
+    button.action[disabled] { background:#95a5a6; cursor:not-allowed; }
+    #status { text-align:center; padding:0.5rem; color:#666; }
+    #popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 1.25rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); display: none; z-index: 10; width: 320px; }
+    #popup img { width: 100%; border-radius: 6px; margin-bottom: 0.75rem; }
     #popup input, #popup select { width: 100%; margin-top: 0.5rem; padding: 0.5rem; font-size: 1rem; border-radius: 6px; border: 1px solid #ccc; }
     #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 5; }
-    ul { list-style: none; padding: 0; }
+    ul { list-style: none; padding: 0; max-width:480px; margin:0 auto; }
     li { padding: 0.5rem; border-bottom: 1px solid #ccc; cursor: pointer; }
+    footer { text-align:center; padding:0.75rem; color:#888; font-size:0.9rem; }
   </style>
 </head>
 <body>
   <header>Sylvaria Identity Portal</header>
+  <div id="status">Loading models...</div>
+
   <nav>
     <button class="tab active" data-tab="capture">📸 Capture</button>
     <button class="tab" data-tab="scan">🔍 Scan</button>
@@ -35,23 +38,31 @@
 
   <section id="capture" class="active">
     <video id="video" autoplay muted playsinline></video>
-    <button class="action" id="captureBtn">Capture & Identify</button>
+    <div class="controls">
+      <button class="action" id="captureBtn" disabled>Capture & Identify</button>
+    </div>
   </section>
 
   <section id="scan">
-    <button class="action" id="scanBtn">Scan for Match</button>
+    <div class="controls">
+      <button class="action" id="scanBtn" disabled>Scan for Match</button>
+    </div>
   </section>
 
   <section id="edit">
     <ul id="userList"></ul>
-    <input type="file" id="importFile" />
-    <button class="action" id="importBtn">Import Users</button>
-    <button class="action" id="exportBtn">Export Users</button>
+    <div style="text-align:center; margin-top:1rem;">
+      <input type="file" id="importFile" />
+      <div style="margin-top:0.5rem;">
+        <button class="action" id="importBtn" disabled>Import Users</button>
+        <button class="action" id="exportBtn" disabled>Export Users</button>
+      </div>
+    </div>
   </section>
 
   <div id="overlay"></div>
   <div id="popup">
-    <img id="preview" />
+    <img id="preview" alt="preview" />
     <input type="text" id="name" placeholder="Name" />
     <input type="date" id="dob" />
     <select id="gender">
@@ -60,89 +71,129 @@
       <option value="female">Female</option>
       <option value="non-binary">Non-binary / Other</option>
     </select>
-    <button class="action" id="saveBtn">Save User</button>
+    <div style="text-align:right; margin-top:0.75rem;">
+      <button class="action" id="saveBtn">Save User</button>
+    </div>
   </div>
 
+  <!-- Libraries loaded here (end of body guarantees DOM exists first) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+  <script src="face-api.min.js"></script>
+
   <script>
-    window.addEventListener('DOMContentLoaded', async () => {
-      const video = document.getElementById('video');
-      const captureBtn = document.getElementById('captureBtn');
-      const scanBtn = document.getElementById('scanBtn');
-      const exportBtn = document.getElementById('exportBtn');
-      const importBtn = document.getElementById('importBtn');
-      const importFile = document.getElementById('importFile');
-      const popup = document.getElementById('popup');
-      const overlay = document.getElementById('overlay');
-      const preview = document.getElementById('preview');
-      const nameInput = document.getElementById('name');
-      const dobInput = document.getElementById('dob');
-      const genderSelect = document.getElementById('gender');
-      const saveBtn = document.getElementById('saveBtn');
-      const userList = document.getElementById('userList');
+  (async function initSylv() {
+    const statusEl = document.getElementById('status');
+    const video = document.getElementById('video');
+    const captureBtn = document.getElementById('captureBtn');
+    const scanBtn = document.getElementById('scanBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const importFile = document.getElementById('importFile');
+    const popup = document.getElementById('popup');
+    const overlay = document.getElementById('overlay');
+    const preview = document.getElementById('preview');
+    const nameInput = document.getElementById('name');
+    const dobInput = document.getElementById('dob');
+    const genderSelect = document.getElementById('gender');
+    const saveBtn = document.getElementById('saveBtn');
+    const userList = document.getElementById('userList');
 
-      let users = JSON.parse(localStorage.getItem('sylv_users') || '[]');
-      let currentDescriptor = null;
+    let users = JSON.parse(localStorage.getItem('sylv_users') || '[]');
+    let currentDescriptor = null;
 
+    function setStatus(s) { statusEl.textContent = s; console.log('[status]', s); }
+
+    // disable interactive buttons until ready
+    function setInteractive(enabled) {
+      [captureBtn, scanBtn, exportBtn, importBtn].forEach(b => b.disabled = !enabled);
+    }
+    setInteractive(false);
+
+    try {
+      setStatus('Loading models...');
       await Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri('./'),
         faceapi.nets.faceLandmark68Net.loadFromUri('./'),
         faceapi.nets.faceRecognitionNet.loadFromUri('./'),
         faceapi.nets.ageGenderNet.loadFromUri('./')
       ]);
+      setStatus('Models loaded. Starting camera...');
+      console.log('Models loaded:', {
+        tiny: !!faceapi.nets.tinyFaceDetector.params,
+        landmarks: !!faceapi.nets.faceLandmark68Net.params,
+        recognition: !!faceapi.nets.faceRecognitionNet.params,
+        ageGender: !!faceapi.nets.ageGenderNet.params
+      });
+    } catch (err) {
+      console.error('Model load failed', err);
+      setStatus('Model load failed. Check console and model files.');
+      return;
+    }
 
+    // start camera and wait for readiness
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      await new Promise(resolve => {
+        // onloadedmetadata may already have fired in some browsers — check readyState
+        if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
+          video.play().catch(()=>{}); resolve(); return;
+        }
+        video.onloadedmetadata = () => { video.play().catch(()=>{}); resolve(); };
+        // fallback timeout
+        setTimeout(() => resolve(), 3000);
+      });
+      console.log('Camera ready', video.readyState, video.videoWidth, video.videoHeight);
+      setStatus('Ready. You can capture or scan.');
+      setInteractive(true);
+    } catch (err) {
+      console.error('Camera start failed', err);
+      setStatus('Camera access denied or failed.');
+      return;
+    }
+
+    // render user list
+    function renderUsers() {
+      userList.innerHTML = '';
+      users.forEach((u, i) => {
+        const li = document.createElement('li');
+        li.textContent = `${u.name || 'Unnamed'} (${u.gender || 'unknown'})`;
+        li.onclick = () => editUser(i);
+        userList.appendChild(li);
+      });
+    }
+
+    function editUser(index) {
+      const user = users[index];
+      nameInput.value = user.name || '';
+      dobInput.value = user.dob || '';
+      genderSelect.value = user.gender || '';
+      preview.src = user.image || '';
+      popup.style.display = 'block';
+      overlay.style.display = 'block';
+      // save edits
+      saveBtn.onclick = () => {
+        user.name = nameInput.value;
+        user.dob = dobInput.value;
+        user.gender = genderSelect.value;
+        localStorage.setItem('sylv_users', JSON.stringify(users));
+        popup.style.display = 'none';
+        overlay.style.display = 'none';
+        renderUsers();
+      };
+    }
+
+    // Capture flow
+    captureBtn.onclick = async () => {
+      setStatus('Detecting face for capture...');
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
-await new Promise(resolve => {
-  video.onloadedmetadata = () => {
-    video.play();
-    resolve();
-  };
-});
-
-
-      } catch (err) {
-        alert('Camera access denied or failed.');
-        console.error(err);
-      }
-
-      function renderUsers() {
-        userList.innerHTML = '';
-        users.forEach((u, i) => {
-          const li = document.createElement('li');
-          li.textContent = `${u.name} (${u.gender})`;
-          li.onclick = () => editUser(i);
-          userList.appendChild(li);
-        });
-      }
-
-      function editUser(index) {
-        const user = users[index];
-        nameInput.value = user.name;
-        dobInput.value = user.dob;
-        genderSelect.value = user.gender;
-        preview.src = user.image;
-        popup.style.display = 'block';
-        overlay.style.display = 'block';
-        saveBtn.onclick = () => {
-          user.name = nameInput.value;
-          user.dob = dobInput.value;
-          user.gender = genderSelect.value;
-          localStorage.setItem('sylv_users', JSON.stringify(users));
-          popup.style.display = 'none';
-          overlay.style.display = 'none';
-          renderUsers();
-        };
-      }
-
-      captureBtn.onclick = async () => {
         const detection = await faceapi
           .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
           .withFaceLandmarks()
           .withFaceDescriptor()
           .withAgeAndGender();
 
-        if (!detection) return alert('No face detected.');
+        if (!detection) { setStatus('No face detected.'); alert('No face detected.'); return; }
 
         currentDescriptor = detection.descriptor;
         const canvas = faceapi.createCanvasFromMedia(video);
@@ -154,87 +205,109 @@ await new Promise(resolve => {
 
         dobInput.value = '';
         nameInput.value = '';
-        genderSelect.value = detection.gender === 'male' || detection.gender === 'female' ? detection.gender : 'non-binary';
+        genderSelect.value = (detection.gender === 'male' || detection.gender === 'female') ? detection.gender : 'non-binary';
 
         popup.style.display = 'block';
         overlay.style.display = 'block';
+        setStatus('Face captured. Fill details to save.');
+      } catch (err) {
+        console.error('Capture failed', err);
+        setStatus('Capture failed. See console.');
+        alert('Capture failed. Check console.');
+      }
+    };
 
-        saveBtn.onclick = () => {
-          const name = nameInput.value;
-          const dob = dobInput.value;
-          const gender = genderSelect.value;
-          const image = preview.src;
-
-          if (!name || !dob || !gender || !currentDescriptor) return alert('Fill all fields.');
-
-          users.push({
-            name, dob, gender, image,
-            descriptor: Array.from(currentDescriptor)
-          });
-
-          localStorage.setItem('sylv_users', JSON.stringify(users));
-          popup.style.display = 'none';
-          overlay.style.display = 'none';
-          renderUsers();
-        };
-      };
-
-      scanBtn.onclick = async () => {
+    // Scan flow
+    scanBtn.onclick = async () => {
+      setStatus('Detecting face for scan...');
+      try {
         const detection = await faceapi
           .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
           .withFaceLandmarks()
           .withFaceDescriptor();
 
-        if (!detection) return alert('No face detected.');
+        if (!detection) { setStatus('No face detected.'); alert('No face detected.'); return; }
 
-                const query = detection.descriptor;
-        const labeled = users.map(u =>
-          new faceapi.LabeledFaceDescriptors(u.name, [new Float32Array(u.descriptor)])
-        );
-
+        const query = detection.descriptor;
+        const labeled = users.map(u => new faceapi.LabeledFaceDescriptors(u.name, [new Float32Array(u.descriptor)]));
         const matcher = new faceapi.FaceMatcher(labeled);
         const match = matcher.findBestMatch(query);
+        setStatus(`Best match: ${match.toString()}`);
         alert(`Best match: ${match.toString()}`);
-      };
+      } catch (err) {
+        console.error('Scan failed', err);
+        setStatus('Scan failed. See console.');
+        alert('Scan failed. Check console.');
+      }
+    };
 
-      exportBtn.onclick = () => {
+    // Export
+    exportBtn.onclick = () => {
+      try {
         const blob = new Blob([JSON.stringify(users)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = 'sylvaria_users.json';
         a.click();
+      } catch (err) {
+        console.error('Export failed', err);
+        alert('Export failed. See console.');
+      }
+    };
+
+    // Import
+    importBtn.onclick = () => {
+      const file = importFile.files[0];
+      if (!file) return alert('Choose a file.');
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          users = JSON.parse(e.target.result);
+          localStorage.setItem('sylv_users', JSON.stringify(users));
+          renderUsers();
+          alert('Users imported.');
+        } catch (err) {
+          console.error('Import failed', err);
+          alert('Invalid file.');
+        }
       };
+      reader.readAsText(file);
+    };
 
-      importBtn.onclick = () => {
-        const file = importFile.files[0];
-        if (!file) return alert('Choose a file.');
-        const reader = new FileReader();
-        reader.onload = e => {
-          try {
-            users = JSON.parse(e.target.result);
-            localStorage.setItem('sylv_users', JSON.stringify(users));
-            renderUsers();
-            alert('Users imported.');
-          } catch {
-            alert('Invalid file.');
-          }
-        };
-        reader.readAsText(file);
+    // Tabs
+    document.querySelectorAll('.tab').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+        btn.classList.add('active');
+        const target = document.getElementById(btn.dataset.tab);
+        if (target) target.classList.add('active');
       };
-
-      document.querySelectorAll('.tab').forEach(btn => {
-        btn.onclick = () => {
-          document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
-          document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
-          btn.classList.add('active');
-          document.getElementById(btn.dataset.tab).classList.add('active');
-        };
-      });
-
-      renderUsers();
     });
+
+    // Save from popup (new user)
+    saveBtn.onclick = () => {
+      const name = nameInput.value;
+      const dob = dobInput.value;
+      const gender = genderSelect.value;
+      const image = preview.src;
+      if (!name || !dob || !gender || !currentDescriptor) return alert('Fill all fields.');
+      users.push({ name, dob, gender, image, descriptor: Array.from(currentDescriptor) });
+      localStorage.setItem('sylv_users', JSON.stringify(users));
+      popup.style.display = 'none';
+      overlay.style.display = 'none';
+      renderUsers();
+      setStatus('User saved.');
+    };
+
+    // close popup when overlay clicked
+    overlay.onclick = () => { popup.style.display = 'none'; overlay.style.display = 'none'; };
+
+    renderUsers();
+  })();
   </script>
+
+  <footer> Sylv 1.0.1 — local models required beside this file </footer>
 </body>
 </html>
-
