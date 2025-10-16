@@ -1,37 +1,41 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>Sylvaria Identity Portal — Minimal Test</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body{font-family:Segoe UI,Arial,sans-serif;padding:1rem}
-    video{width:320px;height:240px;background:#000;display:block;margin-bottom:0.5rem}
-    #status{color:#333;margin-bottom:0.5rem}
-    button{padding:0.5rem 1rem;border-radius:6px;border:none;background:#2d9cdb;color:#fff}
-  </style>
+  <meta charset="utf-8">
+  <title>Sylv - Injection Cleanup Test</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>body{font-family:Segoe UI,Arial,sans-serif;padding:1rem}video{width:320px;height:240px;background:#000;display:block;margin-bottom:0.5rem}#status{margin-bottom:0.5rem}</style>
 </head>
 <body>
-  <h3>Sylv Test</h3>
+  <h3>Sylv Injection Cleanup Test</h3>
   <div id="status">init</div>
   <video id="video" autoplay muted playsinline></video>
-  <div>
-    <button id="detectBtn" disabled>Detect Face</button>
-  </div>
+  <div><button id="detectBtn" disabled>Detect Face</button></div>
 
-  <!-- IMPORTANT: load tfjs first, then face-api.js from CDN (no other tfjs/face-api scripts) -->
+  <!-- REMOVE any injected _tfengine BEFORE loading tfjs -->
+  <script>
+    if (window._tfengine) {
+      console.warn('Found injected _tfengine — deleting to avoid conflict');
+      try { delete window._tfengine; } catch(e) { window._tfengine = undefined; }
+    }
+    // also remove any stray "tf" that is not the real tfjs (optional safety)
+    if (window.tf && window.tf.version_core && window.tf.version_core !== undefined) {
+      console.log('Existing tf present with version:', window.tf.version_core);
+    }
+  </script>
+
+  <!-- load matching tfjs and face-api -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
   <script>
   (async function(){
-    const status = id => document.getElementById('status').textContent = id;
+    const status = txt => document.getElementById('status').textContent = txt;
     const video = document.getElementById('video');
     const detectBtn = document.getElementById('detectBtn');
 
-    // sanity log
-    console.log('tf:', typeof tf, 'tf.version_core=', tf && tf.version_core);
-    console.log('faceapi nets:', Object.keys(faceapi.nets || {}));
+    console.log('tf typeof', typeof tf, 'tf.version_core=', tf && tf.version_core);
+    console.log('faceapi nets', Object.keys(faceapi.nets || {}));
 
     status('Loading models...');
     try {
@@ -43,13 +47,13 @@
       ]);
     } catch (e) {
       console.error('Model load error', e);
-      status('Model load failed — check console and files.');
+      status('Model load failed — check console');
       return;
     }
     status('Models loaded. Starting camera...');
 
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ video:true });
+      const s = await navigator.mediaDevices.getUserMedia({video:true});
       video.srcObject = s;
       await new Promise(resolve=>{
         if (video.readyState >= 2 && video.videoWidth && video.videoHeight) { video.play().catch(()=>{}); resolve(); return; }
@@ -62,23 +66,18 @@
       return;
     }
 
-    status('Ready. Run diagnostics then press Detect.');
-
-    // final diagnostics to paste if error still appears
-    console.log('DIAG: video readyState=', video.readyState, 'w/h=', video.videoWidth, video.videoHeight,
-                'tf.version_core=', tf.version_core, 'backend=', tf.getBackend && tf.getBackend());
+    status('Ready — press Detect');
     detectBtn.disabled = false;
 
     detectBtn.onclick = async () => {
       status('Running detection...');
-      // copy this console output if you still get "t is not a function"
       console.log('PRE-DETECT DIAG:', {
         tf_type: typeof tf,
         tf_ver: tf.version_core,
         backend: tf.getBackend && tf.getBackend(),
         video_instance: video instanceof HTMLVideoElement,
         readyState: video.readyState,
-        width: video.videoWidth, height: video.videoHeight
+        w: video.videoWidth, h: video.videoHeight
       });
       try {
         const det = await faceapi
@@ -86,13 +85,13 @@
           .withFaceLandmarks()
           .withFaceDescriptor()
           .withAgeAndGender();
-        console.log('detection result:', det);
+        console.log('detection result', det);
         if (!det) { status('No face'); alert('No face detected'); return; }
-        status('Detected OK — check console for descriptor');
+        status('Detected OK — check console');
       } catch (err) {
         console.error('DETECT ERROR', err);
         status('Detect error — see console');
-        alert('Detect error — copy console output and paste it to me');
+        alert('Detect error — copy console output and paste it here');
       }
     };
   })();
