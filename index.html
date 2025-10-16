@@ -2,136 +2,350 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Sylvaria Identity Portal — Injection-resilient</title>
+  <title>Sylvaria Identity Portal — Resilient Build</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body{font-family:Segoe UI,Arial,sans-serif;padding:1rem}
-    video{width:320px;height:240px;background:#000;display:block;margin-bottom:0.5rem}
-    #status{color:#333;margin-bottom:0.5rem}
-    button{padding:0.5rem 1rem;border-radius:6px;border:none;background:#2d9cdb;color:#fff}
+    body{font-family:Segoe UI,Arial,sans-serif;margin:0;padding:1rem;background:#f4f7fa;color:#333}
+    header{background:#2c3e50;color:#fff;padding:0.75rem 1rem;text-align:center;border-radius:6px}
+    #status{margin:0.75rem 0;color:#555;text-align:center}
+    nav{display:flex;justify-content:center;gap:.5rem;margin-bottom:1rem}
+    nav button{padding:.5rem .75rem;border-radius:6px;border:none;background:#bdc3c7;cursor:pointer}
+    nav button.active{background:#3498db;color:#fff}
+    section{display:none;padding:1rem}
+    section.active{display:block}
+    video{display:block;margin:0 auto;border-radius:12px;background:#000;max-width:480px;width:100%}
+    .controls{text-align:center;margin-top:1rem}
+    button.action{padding:.6rem 1rem;border-radius:8px;border:none;background:#3498db;color:#fff;cursor:pointer}
+    button.action[disabled]{background:#95a5a6;cursor:not-allowed}
+    #popup{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;padding:1rem;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:50;display:none;width:320px}
+    #overlay{position:fixed;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,.45);z-index:40;display:none}
+    #popup img{width:100%;border-radius:6px;margin-bottom:.6rem}
+    #popup input,#popup select{width:100%;padding:.45rem;border-radius:6px;border:1px solid #ccc;margin-top:.4rem}
+    ul{list-style:none;padding:0;max-width:480px;margin:0 auto}
+    li{padding:.5rem;border-bottom:1px solid #ddd;cursor:pointer}
+    footer{text-align:center;color:#888;margin-top:1rem;font-size:.9rem}
   </style>
 </head>
 <body>
-  <h3>Sylv Injection-Resilient Test</h3>
-  <div id="status">init</div>
-  <video id="video" autoplay muted playsinline></video>
-  <div><button id="detectBtn" disabled>Detect Face</button></div>
+  <header>Sylvaria Identity Portal</header>
+  <div id="status">Initializing…</div>
 
+  <nav>
+    <button class="tab active" data-tab="capture">📸 Capture</button>
+    <button class="tab" data-tab="scan">🔍 Scan</button>
+    <button class="tab" data-tab="edit">🛠️ Edit</button>
+  </nav>
+
+  <section id="capture" class="active">
+    <video id="video" autoplay muted playsinline></video>
+    <div class="controls">
+      <button class="action" id="captureBtn" disabled>Capture & Identify</button>
+    </div>
+  </section>
+
+  <section id="scan">
+    <div class="controls">
+      <button class="action" id="scanBtn" disabled>Scan for Match</button>
+    </div>
+  </section>
+
+  <section id="edit">
+    <ul id="userList"></ul>
+    <div style="text-align:center;margin-top:1rem">
+      <input type="file" id="importFile" />
+      <div style="margin-top:.5rem">
+        <button class="action" id="importBtn" disabled>Import Users</button>
+        <button class="action" id="exportBtn" disabled>Export Users</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="overlay"></div>
+  <div id="popup">
+    <img id="preview" alt="preview"/>
+    <input id="name" placeholder="Name" type="text"/>
+    <input id="dob" type="date"/>
+    <select id="gender">
+      <option value="">Select Gender</option>
+      <option value="male">Male</option>
+      <option value="female">Female</option>
+      <option value="non-binary">Non-binary / Other</option>
+    </select>
+    <div style="text-align:right;margin-top:.6rem">
+      <button class="action" id="saveBtn">Save User</button>
+    </div>
+  </div>
+
+  <!-- Injection cleanup BEFORE loading TFJS to avoid pre-existing shims -->
   <script>
-  (async function(){
-    const statusEl = id => { document.getElementById('status').textContent = id; console.log('[status]', id); };
-    const video = document.getElementById('video');
-    const detectBtn = document.getElementById('detectBtn');
-
-    // 1) Remove injected TF-like artifacts that may break TFJS registration
     try {
       if (window._tfengine !== undefined) {
-        console.warn('Removing injected window._tfengine');
+        console.warn('Found injected _tfengine; removing to avoid conflict');
         try { delete window._tfengine; } catch(e) { window._tfengine = undefined; }
       }
-      // Remove any stray tf object that looks like non-standard (we'll reload a clean tf)
+      // Remove global tf if present (we will load a fresh tfjs)
       if (window.tf !== undefined) {
-        // keep note of version if present
-        try {
-          console.warn('Existing window.tf detected (will remove). version:', window.tf.version_core);
-        } catch(e) { console.warn('Existing window.tf detected'); }
         try { delete window.tf; } catch(e) { window.tf = undefined; }
       }
-    } catch (e) {
-      console.warn('Cleanup exception', e);
-    }
+    } catch (e) { console.warn('Injection cleanup failed', e); }
+  </script>
 
-    // Helper to load script dynamically and wait
-    function loadScript(src) {
-      return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = src;
-        s.async = false;
-        s.onload = () => resolve();
-        s.onerror = (e) => reject(new Error('Failed to load ' + src));
-        document.head.appendChild(s);
-      });
-    }
+  <!-- Load tfjs and face-api from CDN (tf first) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
 
-    // 2) Load the exact matching tfjs and face-api.js versions
-    statusEl('Loading tfjs and face-api.js from CDN...');
+  <!-- Ensure tf.fromPixels exists and is callable before face-api loads -->
+  <script>
+    (function ensureFromPixels() {
+      try {
+        // If tf.browser.fromPixels exists but tf.fromPixels does not, assign it
+        if (typeof tf.fromPixels !== 'function' && tf.browser && typeof tf.browser.fromPixels === 'function') {
+          tf.fromPixels = tf.browser.fromPixels;
+          console.warn('Patched tf.fromPixels -> tf.browser.fromPixels');
+        }
+        // If still missing, install a simple shim using a canvas fallback
+        if (typeof tf.fromPixels !== 'function') {
+          tf.fromPixels = function(img) {
+            var c = document.createElement('canvas');
+            var w = img.width || img.videoWidth || 320;
+            var h = img.height || img.videoHeight || 240;
+            c.width = w; c.height = h;
+            var ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            if (tf.browser && typeof tf.browser.fromPixels === 'function') {
+              return tf.browser.fromPixels(c);
+            }
+            var data = ctx.getImageData(0,0,w,h).data;
+            var arr = new Uint8Array(data);
+            // produce a simple tensor [h,w,4] using int32 as fallback
+            return tf.tensor3d(new Uint8Array(arr), [h, w, 4], 'int32');
+          };
+          console.warn('Installed fallback tf.fromPixels shim');
+        }
+      } catch (e) {
+        console.error('Failed to ensure tf.fromPixels', e);
+      }
+    })();
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+  <script>
+  (async function initSylv() {
+    const statusEl = document.getElementById('status');
+    const video = document.getElementById('video');
+    const captureBtn = document.getElementById('captureBtn');
+    const scanBtn = document.getElementById('scanBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const importFile = document.getElementById('importFile');
+    const popup = document.getElementById('popup');
+    const overlay = document.getElementById('overlay');
+    const preview = document.getElementById('preview');
+    const nameInput = document.getElementById('name');
+    const dobInput = document.getElementById('dob');
+    const genderSelect = document.getElementById('gender');
+    const saveBtn = document.getElementById('saveBtn');
+    const userList = document.getElementById('userList');
+
+    let users = JSON.parse(localStorage.getItem('sylv_users') || '[]');
+    let currentDescriptor = null;
+
+    function setStatus(s) { statusEl.textContent = s; console.log('[status]', s); }
+    function setInteractive(enabled) { [captureBtn, scanBtn, exportBtn, importBtn].forEach(b => b.disabled = !enabled); }
+
+    setInteractive(false);
+    console.log('tf.version_core=', tf && tf.version_core);
+    console.log('faceapi nets:', Object.keys(faceapi.nets || {}));
+
     try {
-      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js');
-      await loadScript('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js');
-    } catch (err) {
-      console.error(err);
-      statusEl('Failed to load libraries. Check network or CDN.');
-      return;
-    }
-
-    // 3) Sanity logs
-    console.log('tf typeof', typeof window.tf, 'tf.version_core=', window.tf && window.tf.version_core);
-    console.log('faceapi nets', Object.keys(window.faceapi && faceapi.nets || {}));
-
-    // 4) Load models (expect model files to be in same folder as this file)
-    statusEl('Loading models...');
-    try {
+      setStatus('Loading models...');
       await Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri('./'),
         faceapi.nets.faceLandmark68Net.loadFromUri('./'),
         faceapi.nets.faceRecognitionNet.loadFromUri('./'),
         faceapi.nets.ageGenderNet.loadFromUri('./')
       ]);
-    } catch (e) {
-      console.error('Model load error', e);
-      statusEl('Model load failed — check console and model files.');
+      setStatus('Models loaded. Starting camera...');
+      console.log('Models loaded:', {
+        tiny: !!faceapi.nets.tinyFaceDetector.params,
+        landmarks: !!faceapi.nets.faceLandmark68Net.params,
+        recognition: !!faceapi.nets.faceRecognitionNet.params,
+        ageGender: !!faceapi.nets.ageGenderNet.params
+      });
+    } catch (err) {
+      console.error('Model load failed', err);
+      setStatus('Model load failed. Check console and model files.');
       return;
     }
 
-    // 5) Start camera and wait until ready
-    statusEl('Starting camera...');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({video:true});
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
       await new Promise(resolve => {
-        if (video.readyState >= 2 && video.videoWidth && video.videoHeight) { video.play().catch(()=>{}); resolve(); return; }
+        if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
+          video.play().catch(()=>{}); resolve(); return;
+        }
         video.onloadedmetadata = () => { video.play().catch(()=>{}); resolve(); };
         setTimeout(resolve, 3000);
       });
-    } catch (e) {
-      console.error('Camera error', e);
-      statusEl('Camera start failed.');
+      console.log('Camera ready', video.readyState, video.videoWidth, video.videoHeight);
+      setStatus('Ready. You can capture or scan.');
+      setInteractive(true);
+    } catch (err) {
+      console.error('Camera start failed', err);
+      setStatus('Camera access denied or failed.');
       return;
     }
 
-    statusEl('Ready. Run diagnostics then press Detect.');
-    console.log('DIAG: video readyState=', video.readyState, 'size=', video.videoWidth, 'x', video.videoHeight,
-                'tf.version_core=', tf.version_core, 'backend=', tf.getBackend && tf.getBackend());
-    detectBtn.disabled = false;
-
-    // 6) Detection handler with diagnostics
-    detectBtn.onclick = async () => {
-      statusEl('Running detection...');
-      console.log('PRE-DETECT DIAG:', {
-        tf_type: typeof tf,
-        tf_ver: tf.version_core,
-        backend: tf.getBackend && tf.getBackend(),
-        video_instance: video instanceof HTMLVideoElement,
-        readyState: video.readyState,
-        width: video.videoWidth, height: video.videoHeight
+    function renderUsers() {
+      userList.innerHTML = '';
+      users.forEach((u, i) => {
+        const li = document.createElement('li');
+        li.textContent = `${u.name || 'Unnamed'} (${u.gender || 'unknown'})`;
+        li.onclick = () => editUser(i);
+        userList.appendChild(li);
       });
+    }
+
+    function editUser(index) {
+      const user = users[index];
+      nameInput.value = user.name || '';
+      dobInput.value = user.dob || '';
+      genderSelect.value = user.gender || '';
+      preview.src = user.image || '';
+      popup.style.display = 'block';
+      overlay.style.display = 'block';
+      saveBtn.onclick = () => {
+        user.name = nameInput.value;
+        user.dob = dobInput.value;
+        user.gender = genderSelect.value;
+        localStorage.setItem('sylv_users', JSON.stringify(users));
+        popup.style.display = 'none';
+        overlay.style.display = 'none';
+        renderUsers();
+      };
+    }
+
+    captureBtn.onclick = async () => {
+      setStatus('Detecting face for capture...');
       try {
-        const det = await faceapi
+        console.log('fromPixels input:', video, 'instanceof HTMLVideoElement=', video instanceof HTMLVideoElement, 'readyState=', video.readyState, 'w/h=', video.videoWidth, video.videoHeight);
+        const detection = await faceapi
           .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
           .withFaceLandmarks()
           .withFaceDescriptor()
           .withAgeAndGender();
-        console.log('detection result', det);
-        if (!det) { statusEl('No face'); alert('No face detected'); return; }
-        statusEl('Detected OK — see console for descriptor');
-        alert('Detected OK — check console for descriptor object');
+
+        if (!detection) { setStatus('No face detected.'); alert('No face detected.'); return; }
+
+        currentDescriptor = detection.descriptor;
+        const canvas = faceapi.createCanvasFromMedia(video);
+        const ctx = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        preview.src = canvas.toDataURL();
+
+        dobInput.value = '';
+        nameInput.value = '';
+        genderSelect.value = (detection.gender === 'male' || detection.gender === 'female') ? detection.gender : 'non-binary';
+
+        popup.style.display = 'block';
+        overlay.style.display = 'block';
+        setStatus('Face captured. Fill details to save.');
       } catch (err) {
-        console.error('DETECT ERROR', err);
-        statusEl('Detect error — see console');
-        alert('Detect error — copy console output and paste here');
+        console.error('Capture failed', err);
+        setStatus('Capture failed. See console.');
+        alert('Capture failed. Check console.');
       }
     };
+
+    scanBtn.onclick = async () => {
+      setStatus('Detecting face for scan...');
+      try {
+        console.log('fromPixels input (scan):', video, 'instanceof HTMLVideoElement=', video instanceof HTMLVideoElement, 'readyState=', video.readyState, 'w/h=', video.videoWidth, video.videoHeight);
+        const detection = await faceapi
+          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+
+        if (!detection) { setStatus('No face detected.'); alert('No face detected.'); return; }
+
+        const query = detection.descriptor;
+        const labeled = users.map(u => new faceapi.LabeledFaceDescriptors(u.name, [new Float32Array(u.descriptor)]));
+        const matcher = new faceapi.FaceMatcher(labeled);
+        const match = matcher.findBestMatch(query);
+        setStatus(`Best match: ${match.toString()}`);
+        alert(`Best match: ${match.toString()}`);
+      } catch (err) {
+        console.error('Scan failed', err);
+        setStatus('Scan failed. See console.');
+        alert('Scan failed. Check console.');
+      }
+    };
+
+    exportBtn.onclick = () => {
+      try {
+        const blob = new Blob([JSON.stringify(users)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'sylvaria_users.json';
+        a.click();
+      } catch (err) {
+        console.error('Export failed', err);
+        alert('Export failed. See console.');
+      }
+    };
+
+    importBtn.onclick = () => {
+      const file = importFile.files[0];
+      if (!file) return alert('Choose a file.');
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          users = JSON.parse(e.target.result);
+          localStorage.setItem('sylv_users', JSON.stringify(users));
+          renderUsers();
+          alert('Users imported.');
+        } catch (err) {
+          console.error('Import failed', err);
+          alert('Invalid file.');
+        }
+      };
+      reader.readAsText(file);
+    };
+
+    document.querySelectorAll('.tab').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+        btn.classList.add('active');
+        const target = document.getElementById(btn.dataset.tab);
+        if (target) target.classList.add('active');
+      };
+    });
+
+    saveBtn.onclick = () => {
+      const name = nameInput.value;
+      const dob = dobInput.value;
+      const gender = genderSelect.value;
+      const image = preview.src;
+      if (!name || !dob || !gender || !currentDescriptor) return alert('Fill all fields.');
+      users.push({ name, dob, gender, image, descriptor: Array.from(currentDescriptor) });
+      localStorage.setItem('sylv_users', JSON.stringify(users));
+      popup.style.display = 'none';
+      overlay.style.display = 'none';
+      renderUsers();
+      setStatus('User saved.');
+    };
+
+    overlay.onclick = () => { popup.style.display = 'none'; overlay.style.display = 'none'; };
+
+    renderUsers();
   })();
   </script>
+
+  <footer> Sylv 1.0.1 — local model files required beside this file </footer>
 </body>
 </html>
