@@ -183,6 +183,9 @@
       };
     }
 
+console.log('fromPixels input:', video, 'instanceof HTMLVideoElement=', video instanceof HTMLVideoElement, 'readyState=', video.readyState, 'w/h=', video.videoWidth, video.videoHeight);
+
+
     // Capture flow
     captureBtn.onclick = async () => {
       setStatus('Detecting face for capture...');
